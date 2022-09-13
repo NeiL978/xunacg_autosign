@@ -180,17 +180,13 @@ celerybeat.pid
 
 # Environments
 .env
-.env-test01
-.env-test02
-.env-test03
-.env-test04
-.env-test05
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+config.py
 
 # Spyder project settings
 .spyderproject

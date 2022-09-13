@@ -5,7 +5,7 @@
 # @File    : main.py
 # @Project ：xunacg_autosign
 # @Software: PyCharm
-import os
+
 import re
 import sys
 import time
@@ -14,12 +14,19 @@ import hashlib
 import datetime
 import requests
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+from config import config
 
-load_dotenv()  # take environment variables from .env.
 urllib3.disable_warnings()  # 停止SSL報錯
 session = requests.Session()  # 取得Session，以便後續簽到使用
 session.keep_alive = False  # 關閉多餘連線
+
+# config
+accounts = config.get('accounts')
+url = config.get('url')
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36'
+}
+coins = 0
 
 
 # str轉md5
@@ -27,32 +34,45 @@ def str2md5(pass_str):
     return hashlib.md5(pass_str.encode('utf-8')).hexdigest()
 
 
+# 字串取數字
+def findint(result):
+    intlist = [int(s) for s in re.findall(r'-?\d+\.?\d*', result)]
+    return intlist
+
+
 # 登入
-def login():
+def login(email, password, uid):
+    global coins
     data = {
         'email': email,
-        'password': password
+        'password': str2md5(password),
     }
     try:
-        login_res = session.post(login_url, headers=headers, data=data, verify=False)
+        login_res = session.post(url['login_url'], headers=headers, data=data, verify=False)
         if login_res.status_code == 200:
             soup = BeautifulSoup(login_res.text, "html5lib")
             result = soup.find('h4').text.strip('\n')
             print(result)
-            dailysign()
-            freecoin()
+            coins = 0
+            dailysign_msg = dailysign()
+            freecoin(uid)
+            push_msg(dailysign_msg)
     except requests.exceptions.RequestException as e:
-        print(f'錯誤訊息：{e}')
+        print(f'Login錯誤訊息：{e}')
 
 
 # 每日簽到
 def dailysign():
+    global coins
     try:
-        dailysign_res = session.post(dailysign_url, headers=headers, verify=False)
+        dailysign_res = session.post(url['dailysign_url'], headers=headers, verify=False)
         if dailysign_res.status_code == 200:
             soup = BeautifulSoup(dailysign_res.text, "html5lib")
             result = soup.find('h4').text.strip('\n')
-            print(f'每日簽到狀態：{result}')
+            dailysign_msg = f'每日簽到狀態：{result}'
+            getint = findint(result)
+            coins += getint[1]
+            return dailysign_msg
         dailysign_res.close()
     except requests.exceptions.RequestException as e:
         print(f'錯誤訊息：{e}')
@@ -61,14 +81,12 @@ def dailysign():
 # 取得當日coin免費次數
 def getcoincount():
     try:
-        getcoincount_res = session.get(freecoin_url, headers=headers, verify=False)
+        getcoincount_res = session.get(url['freecoin_url'], headers=headers, verify=False)
         soup = BeautifulSoup(getcoincount_res.text, "html5lib")
         result = soup.find("h4").text.strip('\n')
-        # print(result)
-        getint = [int(s) for s in re.findall(r'-?\d+\.?\d*', result)]  # 將字串中數字提取出來
-        print(getint)
+        getint = findint(result)  # 將字串中數字提取出來
         totalruns = getint[2] if len(getint) != 4 else getint[3]
-        print(f'白嫖下載卷需跑{totalruns}次，間隔35秒。')
+        # print(f'白嫖下載卷需跑{totalruns}次，間隔35秒。')
         getcoincount_res.close()
         return totalruns
     except requests.exceptions.RequestException as e:
@@ -76,8 +94,9 @@ def getcoincount():
 
 
 # freecoin簽到
-def freecoin():
+def freecoin(uid):
     totalruns = getcoincount()  # 取得當日coin免費次數
+    global coins
     data = {
         'uid': uid
     }
@@ -88,25 +107,27 @@ def freecoin():
             sys.stdout.flush()
             time.sleep(1)
         try:
-            freecoin_res = session.post(freecoin_url, headers=headers, data=data, verify=False)
+            freecoin_res = session.post(url['freecoin_url'], headers=headers, data=data, verify=False)
             if freecoin_res.status_code == 200:
                 soup = BeautifulSoup(freecoin_res.text, "html5lib")
                 result = soup.find('h4').text.strip('\n')
+                getint = findint(result)
+                coins += getint[0]
                 print(f'\n{datetime.datetime.now()} {result} 已完成{i}次，還需{totalruns - i}次。')
         except requests.exceptions.RequestException as e:
             print(f'錯誤訊息：{e}')
+    # print(f'coins總共有：{coins}個。')
+
+
+def push_msg(dailysign_msg):
+    pushmsg = f'''{datetime.datetime.now()}
+    {dailysign_msg}
+    今日總共取得：{coins}個。
+    '''
+    print(pushmsg)
 
 
 if __name__ == '__main__':
-    # config
-    login_url = os.getenv('LOGIN_URL')
-    dailysign_url = os.getenv('DAILYSIGN_URL')
-    freecoin_url = os.getenv('FREECOIN_URL')
-    email = os.getenv('EMAIL')
-    password = str2md5(os.getenv('PASSWORD'))
-    uid = os.getenv('UID')
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36'
-    }
 
-    login()
+    for account in accounts:
+        login(account['email'], account['password'], account['uid'])
