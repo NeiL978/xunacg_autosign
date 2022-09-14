@@ -12,6 +12,7 @@ import time
 import urllib3
 import hashlib
 import datetime
+import logging
 import requests
 from bs4 import BeautifulSoup
 from config import config
@@ -19,6 +20,13 @@ from config import config
 urllib3.disable_warnings()  # 停止SSL報錯
 session = requests.Session()  # 取得Session，以便後續簽到使用
 session.keep_alive = False  # 關閉多餘連線
+# logging設定
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
+                    datefmt='%Y/%m/%d %H:%M:%S',
+                    filename='xunacg_sign.log',
+                    encoding='utf-8',
+                    level=logging.INFO
+                    )
 
 # config
 accounts = config.get('accounts')
@@ -50,9 +58,10 @@ def login(email, password, uid):
     try:
         login_res = session.post(url['login_url'], headers=headers, data=data, verify=False)
         if login_res.status_code == 200:
-            soup = BeautifulSoup(login_res.text, "html5lib")
+            soup = BeautifulSoup(login_res.text, 'html5lib')
             result = soup.find('h4').text.strip('\n')
             print(result)
+            logging.info(result)
             coins = 0
             dailysign_msg = dailysign()
             freecoin(uid)
@@ -70,6 +79,7 @@ def dailysign():
             soup = BeautifulSoup(dailysign_res.text, "html5lib")
             result = soup.find('h4').text.strip('\n')
             dailysign_msg = f'每日簽到狀態：{result}'
+            logging.info(dailysign_msg)
             getint = findint(result)
             coins += getint[1]
             return dailysign_msg
@@ -82,8 +92,8 @@ def dailysign():
 def getcoincount():
     try:
         getcoincount_res = session.get(url['freecoin_url'], headers=headers, verify=False)
-        soup = BeautifulSoup(getcoincount_res.text, "html5lib")
-        result = soup.find("h4").text.strip('\n')
+        soup = BeautifulSoup(getcoincount_res.text, 'html5lib')
+        result = soup.find('h4').text.strip('\n')
         getint = findint(result)  # 將字串中數字提取出來
         totalruns = getint[2] if len(getint) != 4 else getint[3]
         # print(f'白嫖下載卷需跑{totalruns}次，間隔35秒。')
@@ -102,28 +112,29 @@ def freecoin(uid):
     }
     for i in range(1, totalruns + 1):
         for j in range(1, 36):
-            print("\r", end="")
-            print("等待時間(35s): {}s: ".format(j), "▓" * j, end="")
+            print("\r", end='')
+            print("等待時間(35s): {}s: ".format(j), '▓' * j, end='')
             sys.stdout.flush()
             time.sleep(1)
         try:
             freecoin_res = session.post(url['freecoin_url'], headers=headers, data=data, verify=False)
             if freecoin_res.status_code == 200:
-                soup = BeautifulSoup(freecoin_res.text, "html5lib")
+                soup = BeautifulSoup(freecoin_res.text, 'html5lib')
                 result = soup.find('h4').text.strip('\n')
                 getint = findint(result)
                 coins += getint[0]
-                print(f'\n{datetime.datetime.now()} {result} 已完成{i}次，還需{totalruns - i}次。')
+                print(f'\n{datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")} {result} 已完成{i}次，還需{totalruns - i}次。')
         except requests.exceptions.RequestException as e:
             print(f'錯誤訊息：{e}')
     # print(f'coins總共有：{coins}個。')
+    logging.info(f'今日coins總共獲得：{coins}個。')
 
 
 def push_msg(dailysign_msg):
-    pushmsg = f'''{datetime.datetime.now()}
-    {dailysign_msg}
-    今日總共取得：{coins}個。
-    '''
+    pushmsg = f'''{datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")}
+{dailysign_msg}
+今日總共取得：{coins}個。
+'''
     print(pushmsg)
 
 
